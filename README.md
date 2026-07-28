@@ -1,4 +1,4 @@
-> Based on theorangeOne's "Accessing Tailscale whilst using Mullvad" and Mullvad's advanced Linux split-tunnelling documentation.
+> Based on TheOrangeOne's "Accessing Tailscale whilst using Mullvad" and Mullvad's advanced Linux split-tunnelling documentation.
 
 Tested 2026-07-28:
 Ubuntu 26.04
