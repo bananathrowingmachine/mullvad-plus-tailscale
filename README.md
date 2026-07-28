@@ -1,23 +1,34 @@
-> Based on TheOrangeOne's "Accessing Tailscale whilst using Mullvad" and Mullvad's advanced Linux split-tunnelling documentation.
+# Use Tailscale with Mullvad on Linux
 
-Tested 2026-07-28:
-Ubuntu 26.04
-Mullvad 2026.3
-Tailscale 1.98.9
+Use Tailscale and the Mullvad desktop app at the same time on Linux. This
+configuration marks Tailnet traffic so Mullvad permits the kernel to route it
+through `tailscale0`.
 
-# Using Tailscale and Mullvad together on Linux
+Based on [TheOrangeOne's guide][orangeone] and
+[Mullvad's advanced Linux split-tunnelling documentation][mullvad-docs].
+This variant adds IPv6 support, interface-restricted inbound rules, and a
+dedicated systemd service.
 
-This configuration allows traffic to and from Tailscale devices while the
-Mullvad desktop app is connected. It uses Mullvad's documented nftables marks
-to route Tailnet traffic outside the Mullvad tunnel and into `tailscale0`.
+**Tested on 2026-07-28 with:**
 
-The configuration consists of two files:
+- Ubuntu 26.04
+- Mullvad 2026.3
+- Tailscale 1.98.9
 
-- `/etc/nftables.d/mullvad-tailscale.nft` contains the actual firewall marks.
-- `/etc/systemd/system/tailscale-mullvad.service` loads the marks at boot.
+## What it installs
 
-The dedicated service manages only its own `mullvad_tailscale` table. It does
-not flush or take ownership of the rest of the system firewall.
+- [`mullvad-tailscale.nft`](mullvad-tailscale.nft) contains the firewall
+  marks.
+- [`tailscale-mullvad.service`](tailscale-mullvad.service) loads and removes
+  that nftables table without taking ownership of the rest of the firewall.
+
+The dedicated service does not enable the generic `nftables.service` and does
+not flush Mullvad's or Tailscale's dynamically managed firewall tables.
+
+> **Important:** Traffic addressed to the Tailnet bypasses Mullvad's tunnel
+> routing so it can enter `tailscale0`. Tailscale still encrypts this traffic.
+> Traffic not addressed to the Tailnet remains governed by Mullvad. Incoming
+> connections also remain subject to your Tailscale access controls.
 
 ## Prerequisites
 
@@ -27,7 +38,7 @@ not flush or take ownership of the rest of the system firewall.
 - nftables (`nft`)
 - The standard Tailscale interface name, `tailscale0`
 
-Confirm the commands and services exist:
+Confirm the required commands, services, and interface exist:
 
 ```bash
 command -v mullvad tailscale nft
@@ -35,51 +46,76 @@ systemctl status mullvad-daemon tailscaled --no-pager
 ip link show tailscale0
 ```
 
-## 1. Create the nftables rule
+## Install
 
-Create the configuration directory:
-
-```bash
-sudo install -d -m 0755 /etc/nftables.d
-```
-
-Open the rules file:
+Clone the repository:
 
 ```bash
-sudoedit /etc/nftables.d/mullvad-tailscale.nft
+git clone https://github.com/patrickfeeney03/mullvad-plus-tailscale.git
+cd mullvad-plus-tailscale
 ```
 
-Paste:
-
-```nft
-table inet mullvad_tailscale {
- chain output {
-  type route hook output priority -100; policy accept;
-
-  # Bypass Mullvad for traffic addressed to Tailscale.
-  ip daddr 100.64.0.0/10 counter ct mark set 0x00000f41 meta mark set 0x6d6f6c65
-  ip6 daddr fd7a:115c:a1e0::/48 counter ct mark set 0x00000f41 meta mark set 0x6d6f6c65
- }
-
- chain input {
-  type filter hook input priority -100; policy accept;
-
-  # Mark only traffic that actually arrived through Tailscale.
-  iifname "tailscale0" ip saddr 100.64.0.0/10 counter ct mark set 0x00000f41 meta mark set 0x6d6f6c65
-  iifname "tailscale0" ip6 saddr fd7a:115c:a1e0::/48 counter ct mark set 0x00000f41 meta mark set 0x6d6f6c65
- }
-}
-```
-
-Check the syntax before loading it:
+Check both configuration files before installing them:
 
 ```bash
-sudo nft --check --file /etc/nftables.d/mullvad-tailscale.nft
+sudo nft --check --file mullvad-tailscale.nft
+systemd-analyze verify "$PWD/tailscale-mullvad.service"
 ```
 
-No output means the check succeeded.
+No output means the checks succeeded.
 
-### Address ranges
+Install and enable the compatibility service:
+
+```bash
+sudo install -Dm0644 mullvad-tailscale.nft \
+  /etc/nftables.d/mullvad-tailscale.nft
+sudo install -Dm0644 tailscale-mullvad.service \
+  /etc/systemd/system/tailscale-mullvad.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tailscale-mullvad.service
+```
+
+If `command -v nft` reports a path other than `/usr/sbin/nft`, update the
+service file to use the reported absolute path before installing it.
+
+Do not enable the generic `nftables.service` solely for this setup.
+
+## Verify
+
+Check that the compatibility service is enabled and active:
+
+```bash
+systemctl is-enabled tailscale-mullvad.service
+systemctl is-active tailscale-mullvad.service
+```
+
+The commands should report `enabled` and `active`.
+
+Confirm that Mullvad remains connected:
+
+```bash
+mullvad status
+curl https://am.i.mullvad.net/connected
+```
+
+Find an online Tailnet device and test it using its Tailscale IP or MagicDNS
+name:
+
+```bash
+tailscale status
+tailscale ping 100.x.y.z
+ping -c 3 100.x.y.z
+```
+
+Inspect the compatibility rules and their packet counters:
+
+```bash
+sudo nft list table inet mullvad_tailscale
+```
+
+The relevant IPv4 or IPv6 counters should increase as Tailnet traffic passes.
+
+## Address ranges and inbound access
 
 - `100.64.0.0/10` is Tailscale's IPv4 shared-address range. It covers
   `100.64.0.0` through `100.127.255.255`.
@@ -90,103 +126,19 @@ input rules allow other Tailnet devices to initiate connections to this
 computer. Incoming exceptions are restricted to packets that actually arrive
 through `tailscale0`.
 
-## 2. Create the systemd service
+## Update
 
-Open the service file:
-
-```bash
-sudoedit /etc/systemd/system/tailscale-mullvad.service
-```
-
-Paste:
-
-```ini
-[Unit]
-Description=Allow Tailscale traffic alongside Mullvad VPN
-Documentation=https://theorangeone.net/posts/tailscale-mullvad/
-Documentation=https://mullvad.net/en/help/split-tunneling-with-linux-advanced
-After=mullvad-daemon.service tailscaled.service
-Wants=mullvad-daemon.service tailscaled.service
-
-[Service]
-Type=oneshot
-ExecStartPre=/usr/sbin/nft destroy table inet mullvad_tailscale
-ExecStart=/usr/sbin/nft -f /etc/nftables.d/mullvad-tailscale.nft
-ExecReload=/usr/sbin/nft destroy table inet mullvad_tailscale
-ExecReload=/usr/sbin/nft -f /etc/nftables.d/mullvad-tailscale.nft
-ExecStop=/usr/sbin/nft destroy table inet mullvad_tailscale
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-```
-
-If `command -v nft` reports a location other than `/usr/sbin/nft`, use the
-reported absolute path in the service.
-
-Validate and start the service:
+Pull the latest version, validate it, reinstall both files, and reload:
 
 ```bash
-sudo systemd-analyze verify /etc/systemd/system/tailscale-mullvad.service
+git pull --ff-only
+sudo nft --check --file mullvad-tailscale.nft
+systemd-analyze verify "$PWD/tailscale-mullvad.service"
+sudo install -Dm0644 mullvad-tailscale.nft \
+  /etc/nftables.d/mullvad-tailscale.nft
+sudo install -Dm0644 tailscale-mullvad.service \
+  /etc/systemd/system/tailscale-mullvad.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now tailscale-mullvad.service
-```
-
-Do not enable the generic `nftables.service` solely for this setup. This
-dedicated service provides persistence without making the generic service
-responsible for Mullvad's or Tailscale's dynamically managed firewall tables.
-
-## 3. Verify the result
-
-Check that the compatibility service is enabled and active:
-
-```bash
-systemctl is-enabled tailscale-mullvad.service
-systemctl is-active tailscale-mullvad.service
-```
-
-Both commands should report the expected states:
-
-```text
-enabled
-active
-```
-
-Confirm that Mullvad remains connected:
-
-```bash
-mullvad status
-curl https://am.i.mullvad.net/connected
-```
-
-Find an online Tailnet device:
-
-```bash
-tailscale status
-```
-
-Test it using its Tailscale IP or MagicDNS name:
-
-```bash
-tailscale ping 100.x.y.z
-ping -c 3 100.x.y.z
-```
-
-Finally, inspect the rule and its packet counters:
-
-```bash
-sudo nft list table inet mullvad_tailscale
-```
-
-The counters beside the matching IPv4 or IPv6 rules should increase when
-Tailnet traffic passes through them.
-
-## Updating the rule
-
-After editing `/etc/nftables.d/mullvad-tailscale.nft`, check and reload it:
-
-```bash
-sudo nft --check --file /etc/nftables.d/mullvad-tailscale.nft
 sudo systemctl reload tailscale-mullvad.service
 ```
 
@@ -209,8 +161,7 @@ sudo nft list table inet mullvad_tailscale
 ```
 
 If a future Mullvad update changes its split-tunnelling implementation, verify
-the two mark values against Mullvad's current advanced Linux documentation
-before changing them:
+these values against Mullvad's current documentation:
 
 ```text
 Connection-tracking mark: 0x00000f41
@@ -219,19 +170,14 @@ Routing/meta mark:         0x6d6f6c65
 
 ## Disable or remove
 
-Temporarily disable the compatibility rule:
+Temporarily disable and restore the compatibility rule:
 
 ```bash
 sudo systemctl stop tailscale-mullvad.service
-```
-
-Restore it:
-
-```bash
 sudo systemctl start tailscale-mullvad.service
 ```
 
-Remove the setup completely:
+Remove it completely:
 
 ```bash
 sudo systemctl disable --now tailscale-mullvad.service
@@ -240,9 +186,16 @@ sudo rm /etc/nftables.d/mullvad-tailscale.nft
 sudo systemctl daemon-reload
 ```
 
-Stopping the service destroys only the `inet mullvad_tailscale` table.
+Stopping the service deletes only the `inet mullvad_tailscale` table.
 
-## Sources
+## Acknowledgements
 
-- [Accessing Tailscale whilst using Mullvad](https://theorangeone.net/posts/tailscale-mullvad/)
-- [Mullvad: Split tunneling with Linux (advanced)](https://mullvad.net/en/help/split-tunneling-with-linux-advanced)
+- [Accessing Tailscale whilst using Mullvad][orangeone] by TheOrangeOne
+- [Mullvad: Split tunneling with Linux (advanced)][mullvad-docs]
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+[orangeone]: https://theorangeone.net/posts/tailscale-mullvad/
+[mullvad-docs]: https://mullvad.net/en/help/split-tunneling-with-linux-advanced

@@ -19,19 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Then add this near the bottom of the README:
-
-## Acknowledgements
-
-This configuration is based on:
-
-- [Accessing Tailscale whilst using Mullvad](https://theorangeone.net/posts/tailscale-mullvad/) by TheOrangeOne
-- [Mullvad: Split tunneling with Linux (advanced)](https://mullvad.net/en/help/split-tunneling-with-linux-advanced)
-
-This variant adds IPv6 support, interface-restricted inbound rules, and a
-dedicated systemd service.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
