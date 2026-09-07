@@ -2,16 +2,25 @@
 Description=Allow Tailscale traffic alongside Mullvad VPN
 Documentation=https://theorangeone.net/posts/tailscale-mullvad/
 Documentation=https://mullvad.net/en/help/split-tunneling-with-linux-advanced
-After=mullvad-daemon.service tailscaled.service
+After=mullvad-daemon.service tailscaled.service network-online.target
 Wants=mullvad-daemon.service tailscaled.service
 
 [Service]
 Type=oneshot
-ExecStartPre=-/usr/sbin/nft delete table inet mullvad_tailscale
-ExecStart=/usr/sbin/nft -f /etc/nftables.d/mullvad-tailscale.nft
-ExecReload=-/usr/sbin/nft delete table inet mullvad_tailscale
-ExecReload=/usr/sbin/nft -f /etc/nftables.d/mullvad-tailscale.nft
-ExecStop=-/usr/sbin/nft delete table inet mullvad_tailscale
+ExecStartPre=/usr/bin/mkdir -p /etc/nftables.d
+# Wait up to 10 seconds for Mullvad routing table 52 to exist
+ExecStartPre=/usr/bin/bash -c 'until ip route show table 52 >/dev/null 2>&1; do sleep 1; done'
+# Cleanup old table and rule silently before creating
+ExecStartPre=/usr/bin/bash -c '/usr/bin/nft delete table inet mullvad_tailscale 2>/dev/null || true'
+ExecStartPre=/usr/bin/bash -c '/usr/bin/ip rule del pref 10 fwmark 0x6d6f6c65 lookup 52 2>/dev/null || true'
+
+ExecStart=/usr/bin/nft -f /etc/nftables.d/mullvad-tailscale.nft
+ExecStartPost=/usr/bin/ip rule add pref 10 fwmark 0x6d6f6c65 lookup 52
+
+ExecReload=/usr/bin/nft -f /etc/nftables.d/mullvad-tailscale.nft
+
+ExecStop=/usr/bin/bash -c '/usr/bin/nft delete table inet mullvad_tailscale 2>/dev/null || true'
+ExecStop=/usr/bin/bash -c '/usr/bin/ip rule del pref 10 fwmark 0x6d6f6c65 lookup 52 2>/dev/null || true'
 RemainAfterExit=yes
 
 [Install]
