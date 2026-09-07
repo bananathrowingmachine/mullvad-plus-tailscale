@@ -1,0 +1,15 @@
+[Unit]
+Description=Keep Tailscale fwmark routing ahead of Mullvad's LAN-sharing rule
+Documentation=https://theorangeone.net/posts/tailscale-mullvad/
+After=mullvad-daemon.service tailscaled.service tailscale-mullvad.service
+Wants=mullvad-daemon.service tailscaled.service tailscale-mullvad.service
+PartOf=tailscale-mullvad.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tailscale-mullvad-watch.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
