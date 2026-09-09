@@ -15,9 +15,9 @@ dedicated systemd service.
 - Mullvad 2026.3
 - Tailscale 1.98.9
 
-**New version tested on 2026-09-07 with:**
+**New version tested on 2026-09-08 with:**
 
-- CachyOS (up to date as of writing)
+- CachyOS (up to date as of writing) and Linux Mint 22.3
 - Mullvad 2026.4
 - Tailscale 1.102.3
 
