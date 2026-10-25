@@ -18,7 +18,7 @@ dedicated systemd service.
 **New version tested on 2026-10-25 with:**
 
 - CachyOS (up to date as of writing)
-- Mint 22.3 x86_64 (when everything is switched to ...\sbin\
+- Mint 22.3 x86_64 (when everything is switched to \usr\sbin\nft)
 - Mullvad 2026.5
 - Tailscale 1.104.2
 
