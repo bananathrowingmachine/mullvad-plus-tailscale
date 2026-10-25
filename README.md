@@ -15,11 +15,12 @@ dedicated systemd service.
 - Mullvad 2026.3
 - Tailscale 1.98.9
 
-**New version tested on 2026-09-08 with:**
+**New version tested on 2026-10-25 with:**
 
-- CachyOS (up to date as of writing) and Linux Mint 22.3
-- Mullvad 2026.4
-- Tailscale 1.102.3
+- CachyOS (up to date as of writing)
+- Mint 22.3 x86_64 (when everything is switched to ...\sbin\
+- Mullvad 2026.5
+- Tailscale 1.104.2
 
 Note that Arch based distributions (such as CachyOS) generally have `nft` at `/usr/bin/nft` rather than `/usr/sbin/nft` (see the
 [Install](#install) note below), and where the `/etc/nftables.d` directory
